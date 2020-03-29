@@ -1,0 +1,29 @@
+;; shadow-cljs configuration
+{:dependencies [[re-frame "0.10.7"]
+                [reagent "0.8.1"]
+                [luminus-transit "0.1.1"]
+                [org.clojure/core.async "0.4.500"]
+                [kee-frame "0.3.3" :exclusions [metosin/reitit-core]]
+                [binaryage/devtools "0.9.10"]
+                [re-frisk "0.5.4.1"]
+                [metosin/reitit "0.3.9"]]
+
+ :source-paths ["src/cljc" "src/cljs" "env/dev/cljs"]
+ :nrepl {:port 7002}
+ :dev-http {8000 {:roots ["resources/public" "target/cljsbuild/public"]}}
+ :builds
+ {:app
+  {:target :browser
+   :output-dir "target/cljsbuild/public/js"
+   :asset-path "/js"
+   :modules {:app {:entries [git-stats.app]}}
+   :devtools {:watch-dir "resources/public"
+              :preloads [re-frisk.preload]
+              :console-support true}
+   :dev
+   {:closure-defines {"re_frame.trace.trace_enabled_QMARK_" true}}}
+  :test
+  {:target :node-test
+   :output-to "target/test/app.js"
+   :autorun true}}}
+
