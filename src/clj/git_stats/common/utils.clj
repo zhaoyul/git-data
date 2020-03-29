@@ -1,8 +1,181 @@
 (ns git-stats.common.utils
   (:require [clj-time.format :as f]
-            [clojure.string :as s])
+            [clojure.string :as s]
+            [clojure.java.io :as io]
+            [clj-jgit.porcelain :refer :all])  
   (:import (com.twitter.snowflake.sequence SnowFlakeGenerator)
            (java.util.concurrent TimeUnit)))
+
+
+;;; git utils
+
+(defn- has-sub-dir?
+  "判断dir下是否有名为 sub-dir-name 的子文件夹"
+  [dir sub-dir-name]
+  (let [files (vec (.listFiles dir))]
+    (->> files
+         (filter (fn [f] (and (.isDirectory f)
+                             (= sub-dir-name (.getName f)))))
+         empty?
+         not)) )
+
+(defn- repo-dir?
+  "判断当前文件夹是否是个git代码库"
+  [dir]
+  (and (.isDirectory dir)
+       (has-sub-dir? dir ".git")))
+
+(defn- src-dir?
+  "判断当前src目录是不是代码目录, 主要用来排除node_modules的src目录"
+  [dir]
+  (and (.isDirectory dir)
+       (= (.getName dir) "src")
+       (not (s/includes? (.getParent dir) "node_modules"))))
+
+
+(defn file-end-with?
+  "文件是否以某后缀结束"
+  [f suffix]
+  (s/ends-with? (.getName f) suffix))
+
+(def src-suffix-set #{"clj" "cljs" "js" "css" "sql" "vue"})
+
+(defn- file-suffix
+  "返回文件的后缀名"
+  [file-name]
+  (s/replace file-name #".*\." "") )
+
+(defn- is-src-file?
+  "是否为源代码"
+  [f]
+  (src-suffix-set (file-suffix (.getName f))))
+
+(defn- repo-root
+  "获得repo相对于当前执行目录的位置, 为库调用做准备"
+  [file]
+  (loop [parent (.getParent file)]
+    (if (repo-dir? (io/file parent))
+      parent
+      (recur (.getParent (io/file parent))))))
+
+(defn- file-path-in-repo
+  "处理代码文件的名称:
+   ../customplatform/store-pc/src/cljs/store_pc/quick_custom/information_view.cljs
+  处理为:
+  store-pc/src/cljs/store_pc/quick_custom/information_view.cljs"
+  [file-name]
+  (let [repo-root-path (repo-root (io/file file-name))]
+    (-> file-name
+        (s/replace repo-root-path "")
+        (s/replace-first "/" "" ))))
+
+
+(defn- src-files-lst
+  "从src目录下返回该目录的所有代码文件"
+  [src-dir]
+  (->> src-dir
+       file-seq
+       (filter (fn [f]
+                 (and (.isFile f)
+                      (is-src-file? f))))))
+
+
+
+(defn- file-full-name
+  "拼接文件的全名"
+  [io-file]
+  (str (.getParent io-file) "/" (.getName io-file)))
+
+
+
+(defn src-dirs
+  "返回当前代码文件夹下所有的src目录"
+  [dir]
+  (let [all-files (file-seq dir)
+        src-dirs (->> all-files
+                      (filter src-dir?))]
+    src-dirs))
+
+(defn blame-file
+  "使用blame处理代码, 得到每个人在该文件的行数"
+  [file-name]
+  (->> file-name
+       file-path-in-repo
+       (git-blame test-repo )
+       (map :author)
+       (map :name)
+       (group-by identity)
+       (reduce-kv (fn [m k v]
+                    (assoc m k (count v)))
+                  {})))
+
+
+
+(defn count-src-lines [src-dir]
+  (->> src-dir
+       src-files-lst
+       ))
+
+(defn author-stats [repo-dir-path]
+  (->> repo-dir-path
+       io/file
+       src-dirs
+       (mapcat src-files-lst)
+       (map file-full-name)
+       (map blame-file)
+       (reduce  (fn [r m]
+                  (merge-with + r m))
+                {})
+       )
+  )
+
+(comment
+
+  (->> "../customplatform"
+       author-stats)
+
+  (->> "../customplatform"
+       io/file
+       src-dirs
+       first
+       src-files-lst
+       (map file-full-name)
+       (map blame-file)
+       (reduce  (fn [r m]
+                  (merge-with + r m))
+                {})
+       )
+
+  (clojure.pprint/pprint (->> (src-files-lst  (first (src-files (io/file "../customplatform")) ))
+                              (map file-full-name)))
+
+  (count (file-seq  (io/file "../customplatform")))
+
+  (def test-repo (load-repo "../customplatform"))
+
+  (git-log test-repo :max-count 1)
+
+
+  (->> (git-blame test-repo "README.md")
+       (map :author)
+       (map :name)
+       (group-by identity)
+       (reduce-kv (fn [m k v]
+                    (assoc m k (count v)))
+                  {})
+       )
+
+
+  (blame-file "../customplatform/README.md")
+  
+  (def repo-dir (io/file "../customplatform"))
+  (repo-dir? (io/file "../customplatform"))
+  (has-sub-dir? repo-dir ".git")
+  (clojure.pprint/pprint (src-files (io/file "../customplatform")))
+  )
+
+
+
 
 (def year-month-day
   "yyyy-MM-dd")
