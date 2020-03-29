@@ -1,13 +1,43 @@
 (ns git-stats.common.utils
-  (:require [clj-time.format :as f]
-            [clojure.string :as s]
-            [clojure.java.io :as io]
-            [clj-jgit.porcelain :refer :all])  
+  (:require
+   [clojure.string :as s]
+   [clojure.edn :as edn]
+   [java-time :as jt]
+   [clojure.java.io :as io]
+   [clj-jgit.porcelain :refer [git-blame load-repo git-log git-fetch git-clone git-add git-commit git-push]])
   (:import (com.twitter.snowflake.sequence SnowFlakeGenerator)
            (java.util.concurrent TimeUnit)))
 
 
 ;;; git utils
+
+(def db (atom {}))
+
+(def disk "stats.edn")
+
+(defn- db->disk []
+  (spit disk @db))
+
+(defn- disk->db []
+  (reset! db (edn/read-string (slurp disk))))
+
+(defn init-db []
+  (disk->db))
+
+(defn j-u-d [jt]
+  (java.util.Date/from jt))
+
+
+(comment
+  (db->disk)
+  (disk->db)
+
+  )
+
+
+(jt/minus (jt/local-date) (jt/days 1))
+
+
 
 (defn- has-sub-dir?
   "判断dir下是否有名为 sub-dir-name 的子文件夹"
@@ -16,8 +46,7 @@
     (->> files
          (filter (fn [f] (and (.isDirectory f)
                              (= sub-dir-name (.getName f)))))
-         empty?
-         not)) )
+         seq)))
 
 (defn- repo-dir?
   "判断当前文件夹是否是个git代码库"
@@ -92,47 +121,41 @@
   "返回当前代码文件夹下所有的src目录"
   [dir]
   (let [all-files (file-seq dir)
-        src-dirs (->> all-files
-                      (filter src-dir?))]
-    src-dirs))
+        dirs (->> all-files
+                  (filter src-dir?))]
+    dirs))
 
 (defn blame-file
   "使用blame处理代码, 得到每个人在该文件的行数"
-  [file-name]
+  [repo file-name]
   (->> file-name
        file-path-in-repo
-       (git-blame test-repo )
-       (map :author)
-       (map :name)
+       (git-blame repo)
+       (map (fn [m] {:name (get-in m [:author :name])
+                    :file (file-suffix (get-in m [:source-path]))}))
        (group-by identity)
        (reduce-kv (fn [m k v]
                     (assoc m k (count v)))
                   {})))
 
 
+(defn authors-stats [repo-dir-path]
+  (let [repo (load-repo repo-dir-path)]
+    (->> repo-dir-path
+         io/file
+         src-dirs
+         (mapcat src-files-lst)
+         (map file-full-name)
+         (map (partial blame-file repo))
+         (reduce  (fn [r m]
+                    (merge-with + r m))
+                  {}))))
 
-(defn count-src-lines [src-dir]
-  (->> src-dir
-       src-files-lst
-       ))
-
-(defn author-stats [repo-dir-path]
-  (->> repo-dir-path
-       io/file
-       src-dirs
-       (mapcat src-files-lst)
-       (map file-full-name)
-       (map blame-file)
-       (reduce  (fn [r m]
-                  (merge-with + r m))
-                {})
-       )
-  )
 
 (comment
 
   (->> "../customplatform"
-       author-stats)
+       authors-stats)
 
   (->> "../customplatform"
        io/file
@@ -176,6 +199,13 @@
 
 
 
+
+
+(defmacro with-private-fns
+  "Refers private fns from ns and runs tests in context."
+  [[ns fns] & tests]
+  `(let ~(reduce #(conj %1 %2 `(ns-resolve '~ns '~%2)) [] fns)
+     ~@tests))
 
 (def year-month-day
   "yyyy-MM-dd")
