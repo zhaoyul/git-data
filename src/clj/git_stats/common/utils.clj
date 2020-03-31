@@ -4,7 +4,8 @@
    [clojure.edn :as edn]
    [java-time :as jt]
    [clojure.java.io :as io]
-   [clj-jgit.porcelain :refer [git-blame load-repo git-log git-fetch git-clone git-add git-commit git-push]])
+   [clj-jgit.porcelain :refer [git-blame load-repo git-log git-fetch git-clone git-add git-commit git-push]]
+   [clj-jgit.querying :refer [rev-list commit-info changed-files-with-patch]])
   (:import (com.twitter.snowflake.sequence SnowFlakeGenerator)
            (java.util.concurrent TimeUnit)))
 
@@ -115,8 +116,18 @@
   [io-file]
   (str (.getParent io-file) "/" (.getName io-file)))
 
+(defn- all-commits [repo]
+  (->>  (rev-list repo)
+        (map  (partial commit-info repo))))
 
 
+(defn- time-slices
+  "可以接受的参数 :m :w :d"
+  [time-unit start-time end-time]
+  )
+
+
+
 (defn src-dirs
   "返回当前代码文件夹下所有的src目录"
   [dir]
@@ -157,6 +168,10 @@
   (->> "../customplatform"
        authors-stats)
 
+  (defonce blog (load-repo "../blog"))
+  (->>  (rev-list blog)
+        (map  (partial commit-info blog)))
+
   (->> "../customplatform"
        io/file
        src-dirs
@@ -196,6 +211,8 @@
   (has-sub-dir? repo-dir ".git")
   (clojure.pprint/pprint (src-files (io/file "../customplatform")))
   )
+;; => nil
+;; => nil
 
 
 
