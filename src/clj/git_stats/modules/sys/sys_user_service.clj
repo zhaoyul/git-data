@@ -53,4 +53,6 @@
   "获取当前用户菜单"
   [user]
   (let [menu-list (db/find-user-menus (select-keys user [:user-id]))]
-    (map #(select-keys % [:id :parent-id :name :code :path :icon :sort])  menu-list)))
+    (conj (map #(select-keys % [:id :parent-id :name :code :path :icon :sort])  menu-list)
+          {:id 2  :parent-id 0 :name "数据报表" :code "data" :path  "/data" :icon "home" :sort 100 }
+          )))
