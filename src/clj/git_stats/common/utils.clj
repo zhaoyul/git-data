@@ -1,11 +1,15 @@
 (ns git-stats.common.utils
   (:require
    [clojure.string :as s]
+   [clojure.pprint :refer [pprint]]
    [clojure.edn :as edn]
    [java-time :as jt]
    [clojure.java.io :as io]
-   [clj-jgit.porcelain :refer [git-blame load-repo git-log git-fetch git-clone git-add git-commit git-push]]
-   [clj-jgit.querying :refer [rev-list commit-info changed-files-with-patch]])
+
+   [clj-jgit.querying :refer [rev-list commit-info changed-files-with-patch]]
+   [com.hypirion.clj-xchart :as c]
+   [clj-jgit.porcelain :refer [git-blame load-repo git-log git-fetch git-clone git-add git-commit git-push]])
+
   (:import (com.twitter.snowflake.sequence SnowFlakeGenerator)
            (java.util.concurrent TimeUnit)))
 
@@ -162,11 +166,50 @@
                     (merge-with + r m))
                   {}))))
 
+(defn category-chart-data [m]
+  (reduce-kv (fn [m k v]
+               (assoc-in m [(:name k) (:file k)] v))
+             {}
+             m))
+
+
 
 (comment
 
+  (defn spit-chart [chart]
+    (c/spit chart "/tmp/chart.png"))
+
+  (spit-chart (c/category-chart
+               {"Bananas" {"Mon" 6, "Tue" 2, "Fri" 3, "Wed" 1, "Thur" 3}
+                "Apples" {"Tue" 3, "Wed" 5, "Fri" 1, "Mon" 1}
+                "Pears" {"Thur" 1, "Mon" 3, "Fri" 4, "Wed" 1}}
+               {:title "Weekly Fruit Sales"
+                :theme :ggplot2
+                :x-axis {:order ["Mon" "Tue" "Wed" "Thur" "Fri"]}}) )
+
+  (spit-chart (c/category-chart
+               (category-chart-data result)
+               {:title "定制平台"
+                :theme :ggplot2
+                :x-axis {}}))
+
+  (c/spit (c/category-chart
+           (category-chart-data result)
+           {:title "定制平台"
+            :theme :ggplot2
+            :x-axis {}})
+          "c.pdf")
+  
+  (def result (->> "../customplatform"
+                   authors-stats))
+
+  (->> "../measurehardware"
+       authors-stats
+       pprint)
+
   (->> "../customplatform"
-       authors-stats)
+       authors-stats
+       pprint)
 
   (defonce blog (load-repo "../blog"))
   (->>  (rev-list blog)
@@ -204,7 +247,6 @@
        )
 
 
-  (blame-file "../customplatform/README.md")
   
   (def repo-dir (io/file "../customplatform"))
   (repo-dir? (io/file "../customplatform"))
@@ -216,13 +258,6 @@
 
 
 
-
-
-(defmacro with-private-fns
-  "Refers private fns from ns and runs tests in context."
-  [[ns fns] & tests]
-  `(let ~(reduce #(conj %1 %2 `(ns-resolve '~ns '~%2)) [] fns)
-     ~@tests))
 
 (def year-month-day
   "yyyy-MM-dd")

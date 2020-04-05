@@ -49,7 +49,8 @@
                  [buddy/buddy-core "1.6.0"]
                  [metosin/reitit-http "0.3.9"]
                  [metosin/reitit-sieppari "0.3.9"]
-                 [clj-jgit "1.0.0-beta3"]]
+                 [clj-jgit "1.0.0-beta3"]
+                 [com.hypirion/clj-xchart "0.2.0"]]
 
   :min-lein-version "2.0.0"
   
