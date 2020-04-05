@@ -37,7 +37,6 @@
   ;; :once fixture在当前namespace只执行一次
   (fn [f]
     (prepare-before-test)
-    (f)
     (clean-up-after-test)
     ))
 

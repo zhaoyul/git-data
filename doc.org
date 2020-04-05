@@ -7,14 +7,16 @@
     - 特定类型的文件cljs,clj,sql,less,css,js
     - git blame来统计
 *** working items
-    - [X] 代码库当前目录下的文件的作者贡献度
+    - [-] 代码库当前目录下的文件的作者贡献度
       - [X] 找到代码目录/判断指定目录下是不是有.git文件夹
       - [X] 找到我们感兴趣的文件[cljs,clj,sql,less,css,js,vue]
       - [X] git-blame来统计每行的归属
       - [X] 不同的文件类型的比例
+      - [ ] 统计一个库的每个代码文件的每一行归属很耗时, 每天只执行一次, 使用文件缓存.
+            争取20分钟解决这个问题.
     - [-] 对一个代码库的所有的commit的分时段的数据统计
       - [X] 找到所有的commit
-      - [ ] 找到最新的一个commit和最后的一个commit
+      - [X] 找到最新的一个commit和最后的一个commit
       - [ ] 对所有的commit进行分时段进行分片
       - [-] 对每个时间片的commit进行代码统计
         - [X] commit的数量

@@ -13,6 +13,32 @@
   (:import (com.twitter.snowflake.sequence SnowFlakeGenerator)
            (java.util.concurrent TimeUnit)))
 
+
+(def repos {"customplatform" "../customplatform"})
+
+(def authors {"Kevin li"       "李照宇"
+              "kevin.li"       "李照宇"
+              "lizy"           "李照宇"
+              "dirk.sun"       "孙东和"
+              "Damon"          "沈友谊"
+              "Tony"           "杨鲁鹏"
+              "cisco.luo"      "罗德玉"
+              "leilei.s"       "孙磊磊"
+              "zhanghongyi"    "张弘毅"
+              "David Wu"       "吴伟"
+              "alisa.yang"     "杨柳"
+              "visen_lu"       "陆卫新"
+              "Murphy"         "贺茂丰"
+              "ElbertY"        "依力"
+              "Anna"           "刘彩彩"
+              "maofeng"        "贺茂丰"
+              "MaoFeng"        "贺茂丰"
+              "chuanwu zhu"    "聂建龙"
+              "ranmingsheng"   "冉明生"
+              "marvin ma"      "马海强"
+              "strongfish"     "于壮壮"
+              })
+
 
 ;;; git utils
 
@@ -63,7 +89,7 @@
   "判断当前src目录是不是代码目录, 主要用来排除node_modules的src目录"
   [dir]
   (and (.isDirectory dir)
-       (= (.getName dir) "src")
+       (#{"src" "sql"} (.getName dir) )
        (not (s/includes? (.getParent dir) "node_modules"))))
 
 
@@ -172,9 +198,119 @@
              {}
              m))
 
+(defn current-date-str [date]
+  (jt/format "YYYY-MM-dd" date))
 
+(defn stats-file [repo date]
+  (str "./tmp/" repo "/" (current-date-str date) "-status.edn"
+       ))
+
+(defn processed? [repo date]
+  (.exists (io/file (stats-file repo date))))
 
 (comment
+  (stats-file "customplatform" (jt/local-date))
+  (processed? "customplatform" (jt/local-date))
+  )
+
+(defn retrive-data-from-file [repo date]
+  (->> (stats-file repo date)
+       slurp
+       edn/read-string))
+
+(defn generate-data-anew [repo date data]
+  (let [file (stats-file repo date)
+        _ (io/make-parents file )]
+    (-> (stats-file repo date)
+        (spit data))
+    data))
+
+(defn repo-name [repo-dir]
+  (s/replace repo-dir #".*/" ""))
+
+(defn sync-stats [repo-dir date]
+  (if (processed? (repo-name repo-dir) date)
+    (retrive-data-from-file (repo-name repo-dir) date)
+    (generate-data-anew (repo-name repo-dir) date (authors-stats repo-dir) )))
+
+(defn re-name [input]
+  (reduce-kv (fn [m k v]
+               (if (get authors (:name k))
+                 (assoc m
+                        {:name (get authors (:name k)) :file (:file k)}
+                        (+ v (or (get m {:name (get authors (:name k)) :file (:file k)} ) 0)  ))
+                 (assoc m k v))) {} input))
+
+(comment
+
+  (sync-stats "../alk-wxapi" (jt/local-date))
+  (sync-stats "../customplatform" (jt/local-date))
+  
+  (def r (java.util.Random. 42))
+
+  (c/view
+   (c/category-chart
+    (category-chart-data (re-name (sync-stats "../alk-wxapi" (jt/local-date))))
+    {:title "定制平台"
+     :theme :ggplot2
+     :x-axis {}})
+   )
+
+  (c/view
+   (c/category-chart
+    {"Bananas" {"Mon" 6, "Tue" 2, "Fri" 3, "Wed" 1, "Thur" 3}
+     "Apples" {"Tue" 3, "Wed" 5, "Fri" 1, "Mon" 1}
+     "Pears" {"Thur" 1, "Mon" 3, "Fri" 4, "Wed" 1}}
+    {:title "Weekly Fruit Sales"
+     :width 640
+     :height 500
+     :overlap? true
+     :x-axis {:order ["Mon" "Tue" "Wed" "Thur" "Fri"]}}))
+
+  (c/view
+   (c/category-chart
+    (c/normalize-categories
+     {"Bananas" {"Mon" 6, "Tue" 2, "Fri" 3, "Wed" 1, "Thur" 3}
+      "Apples" {"Tue" 3, "Wed" 5, "Fri" 1, "Mon" 1}
+      "Pears" {"Thur" 1, "Mon" 3, "Fri" 4, "Wed" 1}})
+    {:title "Relative Fruit Sales"
+     :width 640
+     :height 500
+     :stacked? true
+     :y-axis {:decimal-pattern "### %"}
+     :x-axis {:order ["Mon" "Tue" "Wed" "Thur" "Fri"]}}))
+
+  (c/view
+   (c/category-chart
+    (category-chart-data (re-name (sync-stats "../customplatform" (jt/local-date))))
+    {:title "定制平台"
+     :theme :xchart
+     :overlap? true
+     :render-style :line
+     :x-axis {:order ["cljs" "clj" "sql" "css" "js"]}}))
+
+  (c/spit (c/category-chart
+           (category-chart-data (re-name (sync-stats "../customplatform" (jt/local-date))))
+           {:title "定制平台"
+            :theme :xchart
+            :overlap? true
+            :render-style :line
+            :x-axis {:order ["cljs" "clj" "sql" "css" "js"]}})
+          "a.svg")
+
+  (c/view
+   (c/xy-chart
+    {"Maxime" {:x (range 10)
+               :y (mapv #(+ % (* 3 (.nextDouble r)))
+                        (range 10))}
+     "Tyrone" {:x (range 10)
+               :y (mapv #(+ 2 % (* 4 (.nextDouble r)))
+                        (range 0 5 0.5))}}
+    {:title "Longest running distance"
+     :x-axis {:title "Months (since start)"}
+     :y-axis {:title "Distance"
+              :decimal-pattern "##.## km"}
+     :theme :matlab}))
 
   (defn spit-chart [chart]
     (c/spit chart "/tmp/chart.png"))
@@ -401,13 +537,13 @@
   一层嵌套: (list-from-group-by {:y 1 :a [{:b 2} {:b 3}]} )))  ->  [{:b 2, :y 1} {:b 3, :y 1}]
 
 
- 双层嵌套:  (mapcat sut/list-from-group-by
+  双层嵌套:  (mapcat sut/list-from-group-by
                   (sut/list-from-group-by {:y 1 :a [{:b [{:x 99}]} {:b [{:x 77}]}]} ))
 
            ->
 
            [{:x 99, :y 1} {:x 77, :y 1}]
- "
+  "
   [m]
   (reduce-kv (fn [r k v]
                (if (vector? v)
@@ -418,3 +554,10 @@
 
              []
              m))
+
+(defmacro with-private-fns
+  "Refers private fns from ns and runs tests in context."
+  [[ns fns] & tests]
+  `(let ~(reduce #(conj %1 %2 `(ns-resolve '~ns '~%2)) [] fns)
+     ~@tests))
+
