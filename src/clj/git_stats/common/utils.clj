@@ -146,10 +146,29 @@
   [io-file]
   (str (.getParent io-file) "/" (.getName io-file)))
 
-(defn- all-commits [repo]
+(defn all-commits [repo]
   (->>  (rev-list repo)
         (map  (partial commit-info repo))))
 
+(defn- count-commit-lines [repo rev]
+  (assoc
+   commit-info
+   :add-delete
+   (if-let [patch (changed-files-with-patch repo rev)]
+     {:add-line (count (re-seq #"\n\+" patch))
+      :delete-line (count (re-seq #"\n\-" patch))}
+     {:add-line 0
+      :delete-line 0})))
+
+(defn all-diffs [repo]
+  (->>  (rev-list repo)
+        (map  (partial count-commit-lines repo))))
+
+(defn time->date [date]
+  (-> date
+      jt/instant
+      (.atZone (jt/zone-id))
+      (.toLocalDate)))
 
 (defn- time-slices
   "可以接受的参数 :m :w :d"
@@ -157,6 +176,12 @@
   )
 
 
+(comment
+  (-> "../git-data"
+      load-repo
+      
+      )
+  )
 
 (defn src-dirs
   "返回当前代码文件夹下所有的src目录"
