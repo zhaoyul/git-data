@@ -14,9 +14,16 @@
            (java.util.concurrent TimeUnit)))
 
 
-(def repos {"customplatform" "../customplatform"})
+(def repos {"定制平台" {:dir "../customplatform"
+                        :remote "git@code.aliyun.com:41674-redcreation/customplatform.git"}
+            "大屏后台" {:dir "../zhlt_product_api"
+                        :remote "git@code.aliyun.com:41674-redcreation/zhlt_product_api.git"}})
 
-(def authors {"Kevin li"       "李照宇"
+(def authors {"Nie JianLong"   "聂建龙"
+              "NieJianlong"    "聂建龙"
+              "chuanwu zhu"    "聂建龙"
+              "Kevin li"       "李照宇"
+              "Kevin.li"       "李照宇"
               "kevin.li"       "李照宇"
               "lizy"           "李照宇"
               "dirk.sun"       "孙东和"
@@ -34,7 +41,7 @@
               "Anna"           "赵阳"
               "maofeng"        "贺茂丰"
               "MaoFeng"        "贺茂丰"
-              "chuanwu zhu"    "聂建龙"
+              "hcops"          "hcops..who??"
               "ranmingsheng"   "冉明生"
               "marvin ma"      "马海强"
               "strongfish"     "于壮壮"
@@ -69,7 +76,12 @@
   )
 
 
-(jt/minus (jt/local-date) (jt/days 1))
+(comment
+
+  (view-stats-chart "量体后台" "../zpag" (jt/local-date))
+  (gen-stats-chart "量体后台" "../zpag" (jt/local-date))
+  )
+
 
 
 
@@ -120,7 +132,7 @@
   (let [files (vec (.listFiles dir))]
     (->> files
          (filter (fn [f] (and (.isDirectory f)
-                             (= sub-dir-name (.getName f)))))
+                              (= sub-dir-name (.getName f)))))
          seq)))
 
 (defn- repo-dir?
@@ -142,7 +154,7 @@
   [f suffix]
   (s/ends-with? (.getName f) suffix))
 
-(def src-suffix-set #{"clj" "cljs" "js" "css" "sql" "vue"})
+(def src-suffix-set #{"clj" "cljs" "js" "css" "sql" "vue" "java"})
 
 (defn- file-suffix
   "返回文件的后缀名"
@@ -290,6 +302,10 @@
 
 
 
+(defn re-name-commit [commit]
+  (if-let [new-name (authors (:author commit))]
+    (assoc commit :author new-name)
+    commit))
 
 (comment
 
@@ -297,6 +313,7 @@
                                "../customplatform"
                                (jt/local-date))
         a-data (->> raw-data
+                    (map re-name-commit)
                     (filter (fn [e] (in-peroid (jt/minus (jt/local-date) (jt/days 30))
                                               (jt/local-date)
                                               (:time e))))
@@ -354,7 +371,7 @@
        file-path-in-repo
        (git-blame repo)
        (map (fn [m] {:name (get-in m [:author :name])
-                    :file (file-suffix (get-in m [:source-path]))}))
+                     :file (file-suffix (get-in m [:source-path]))}))
        (group-by identity)
        (reduce-kv (fn [m k v]
                     (assoc m k (count v)))
@@ -421,6 +438,20 @@
                         {:name (get authors (:name k)) :file (:file k)}
                         (+ v (or (get m {:name (get authors (:name k)) :file (:file k)} ) 0)  ))
                  (assoc m k v))) {} input))
+
+(defn view-stats-chart [title repo-dir date]
+  (let [title (format "%s-%s" title (jt/format (jt/local-date)))
+        img-file (format "%s/%s.svg" "./tmp" title)]
+    (c/view
+     (c/category-chart
+      (category-chart-data (re-name (sync-stats repo-dir date)))
+      {:title title
+       :width 600
+       :height 400
+       :render-style :line
+       :theme :xchart
+       :y-axis {}
+       :x-axis {:order ["cljs" "clj" "sql" "css" "js"]}}))))
 
 (defn gen-stats-chart [title repo-dir date]
   (let [title (format "%s-%s" title (jt/format (jt/local-date)))
