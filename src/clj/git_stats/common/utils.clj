@@ -13,12 +13,12 @@
   (:import (com.twitter.snowflake.sequence SnowFlakeGenerator)
            (java.util.concurrent TimeUnit)))
 
-
+;; 最终要移到配置文件中
 (def repos {"定制平台" {:dir "../customplatform"
                         :remote "git@code.aliyun.com:41674-redcreation/customplatform.git"}
             "大屏后台" {:dir "../zhlt_product_api"
                         :remote "git@code.aliyun.com:41674-redcreation/zhlt_product_api.git"}})
-
+;; 人员对应关系也是要到配置文件
 (def authors {"Nie JianLong"   "聂建龙"
               "NieJianlong"    "聂建龙"
               "chuanwu zhu"    "聂建龙"
@@ -49,80 +49,12 @@
               "cui"            "崔云鹏"
               "Henry"          "丁凡"})
 
-
-;;; git utils
-
-(def db (atom {}))
-
-(def disk "stats.edn")
-
-(defn- db->disk []
-  (spit disk @db))
-
-(defn- disk->db []
-  (reset! db (edn/read-string (slurp disk))))
-
-(defn init-db []
-  (disk->db))
-
-(defn j-u-d [jt]
-  (java.util.Date/from jt))
-
-
-(comment
-  (db->disk)
-  (disk->db)
-
-  )
-
 
 (comment
 
   (view-stats-chart "量体后台" "../zpag" (jt/local-date))
   (gen-stats-chart "量体后台" "../zpag" (jt/local-date))
   )
-
-
-
-
-;; reduce-map + map-vals is taken from the Medley utility library:
-;; https://github.com/weavejester/medley
-;; Medley is under the same license (EPL1.0) as clj-xchart.
-(defn- reduce-map [f coll]
-  (if (instance? clojure.lang.IEditableCollection coll)
-    (persistent! (reduce-kv (f assoc!) (transient (empty coll)) coll))
-    (reduce-kv (f assoc) (empty coll) coll)))
-
-(defn- map-vals
-  "Maps a function over the values of an associative collection."
-  [f coll]
-  (reduce-map (fn [xf] (fn [m k v] (xf m k (f v)))) coll))
-
-
-
-(defn- transpose-single
-  [acc k1 v1]
-  (reduce-kv (fn [m k2 v2]
-               (assoc-in m [k2 k1] v2))
-             acc v1))
-
-(defn transpose-map
-  "Transforms a map of maps such that the inner keys and outer keys are flipped.
-  That is, `(get-in m [k1 k2])` = `(get-in (transpose-map m) [k2 k1])`. The
-  inner values remain the same."
-  [series]
-  (reduce-kv transpose-single {} series))
-
-(defn- normalize-group
-  [m]
-  (let [sum (reduce + (vals m))]
-    (map-vals #(/ % sum) m)))
-
-(defn normalize-categories
-  [m]
-  (->> (transpose-map m)
-       (map-vals normalize-group)
-       transpose-map))
 
 
 
@@ -132,7 +64,7 @@
   (let [files (vec (.listFiles dir))]
     (->> files
          (filter (fn [f] (and (.isDirectory f)
-                              (= sub-dir-name (.getName f)))))
+                             (= sub-dir-name (.getName f)))))
          seq)))
 
 (defn- repo-dir?
@@ -201,35 +133,47 @@
   "拼接文件的全名"
   [io-file]
   (str (.getParent io-file) "/" (.getName io-file)))
+
 
-(defn all-commits [repo]
+(defn all-commits
+  "获得repo的所有commit, 注意是所有branch的commit"
+  [repo]
   (->>  (rev-list repo)
         (map  (partial commit-info repo))))
 
-(defn- rev-diff [rev-m]
+(defn- rev-diff
+  "返回当前commit对应的patch, 返回值是patch的文本"
+  [rev-m]
   (changed-files-with-patch (:repo rev-m) (:raw rev-m)))
 
-(defn- count-commit-lines [rev]
+(defn- count-commit-lines
+  "为commit-map增加一个新的key, :add-delete 记录了修改的行数"
+  [rev]
   (assoc
    rev
    :add-delete
-   (if-let [patch (changed-files-with-patch (:repo rev) (:raw rev))]
+   (if-let [patch (rev-diff rev)]
      {:add-line (count (re-seq #"\n\+" patch))
       :delete-line (count (re-seq #"\n\-" patch))}
      {:add-line 0
       :delete-line 0})))
 
-(defn all-diffs [repo]
-  (->>  (rev-list repo)
-        (map  (partial count-commit-lines repo))))
+#_(defn all-diffs [repo]
+    (->>  (rev-list repo)
+          (map  (partial count-commit-lines repo))))
 
-(defn time->date [date]
+(defn time->date
+  "java.util.Date -> java-time的localdate"
+  [date]
   (-> date
       jt/instant
       (.atZone (jt/zone-id))
       (.toLocalDate)))
 
-(defn truncate-time-to-day [date]
+(defn truncate-time-to-day
+  "util.Date 得到当前时间对应的0点."
+  ;; TODO: 这应该不是应该最好的方法....
+  [date]
   (-> date
       .toInstant
       (.atZone (jt/zone-id))
@@ -239,21 +183,24 @@
       .toInstant
       (java.util.Date/from)))
 
-(defn rev->date [rev]
+(defn rev->date
+  "从时间到日期, 返回localdate类型的rev map的日期"
+  [rev]
   (-> rev :time time->date ))
 
-(defn- time-slices
-  "可以接受的参数 :m :w :d"
-  [time-unit start-time end-time]
-  )
-
-(defn commit-file-name [repo date]
+(defn commit-file-name
+  "commit的edn文件的名称, 一天一个, 作为后续的缓存使用"
+  [repo date]
   (format "./tmp/%s/%s-commit.edn" repo (jt/format "YYYY-MM-dd" date) ))
 
-(defn commits-cached? [repo date]
+(defn commits-cached?
+  "判断缓存文件是否存在"
+  [repo date]
   (.exists (io/file (commit-file-name repo date))))
 
-(defn gen-commits-anew [repo repo-dir date]
+(defn gen-commits-anew
+  "产生一个新的commit edn文件到对应的磁盘位置"
+  [repo repo-dir date]
   (let [file-name (commit-file-name repo date)
         file (io/file file-name)
         _ (io/make-parents file)
@@ -271,14 +218,18 @@
     (spit file-name data)
     data))
 
-(defn retrive-commits-from-cache [repo date]
+(defn retrive-commits-from-cache
+  "从缓存读到相应的commit edn, 每天只执行一次就够了."
+  [repo date]
   (let [file-name (commit-file-name repo date)]
     (->> file-name
          slurp
          edn/read-string
          )))
 
-(defn sync-commits [repo repo-dir date]
+(defn sync-commits
+  "写入commit edn, 做缓存用."
+  [repo repo-dir date]
   (let [file-name (commit-file-name repo date)
         file (io/file file-name)
         _ (io/make-parents file)]
