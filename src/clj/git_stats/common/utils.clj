@@ -28,16 +28,19 @@
               "David Wu"       "吴伟"
               "alisa.yang"     "杨柳"
               "visen_lu"       "陆卫新"
+              "vise.lu"        "陆卫新"
               "Murphy"         "贺茂丰"
               "ElbertY"        "依力"
-              "Anna"           "刘彩彩"
+              "Anna"           "赵阳"
               "maofeng"        "贺茂丰"
               "MaoFeng"        "贺茂丰"
               "chuanwu zhu"    "聂建龙"
               "ranmingsheng"   "冉明生"
               "marvin ma"      "马海强"
               "strongfish"     "于壮壮"
-              })
+              "eric shao"      "邵夔"
+              "cui"            "崔云鹏"
+              "Henry"          "丁凡"})
 
 
 ;;; git utils
@@ -67,6 +70,47 @@
 
 
 (jt/minus (jt/local-date) (jt/days 1))
+
+
+
+;; reduce-map + map-vals is taken from the Medley utility library:
+;; https://github.com/weavejester/medley
+;; Medley is under the same license (EPL1.0) as clj-xchart.
+(defn- reduce-map [f coll]
+  (if (instance? clojure.lang.IEditableCollection coll)
+    (persistent! (reduce-kv (f assoc!) (transient (empty coll)) coll))
+    (reduce-kv (f assoc) (empty coll) coll)))
+
+(defn- map-vals
+  "Maps a function over the values of an associative collection."
+  [f coll]
+  (reduce-map (fn [xf] (fn [m k v] (xf m k (f v)))) coll))
+
+
+
+(defn- transpose-single
+  [acc k1 v1]
+  (reduce-kv (fn [m k2 v2]
+               (assoc-in m [k2 k1] v2))
+             acc v1))
+
+(defn transpose-map
+  "Transforms a map of maps such that the inner keys and outer keys are flipped.
+  That is, `(get-in m [k1 k2])` = `(get-in (transpose-map m) [k2 k1])`. The
+  inner values remain the same."
+  [series]
+  (reduce-kv transpose-single {} series))
+
+(defn- normalize-group
+  [m]
+  (let [sum (reduce + (vals m))]
+    (map-vals #(/ % sum) m)))
+
+(defn normalize-categories
+  [m]
+  (->> (transpose-map m)
+       (map-vals normalize-group)
+       transpose-map))
 
 
 
@@ -150,11 +194,14 @@
   (->>  (rev-list repo)
         (map  (partial commit-info repo))))
 
-(defn- count-commit-lines [repo rev]
+(defn- rev-diff [rev-m]
+  (changed-files-with-patch (:repo rev-m) (:raw rev-m)))
+
+(defn- count-commit-lines [rev]
   (assoc
-   commit-info
+   rev
    :add-delete
-   (if-let [patch (changed-files-with-patch repo rev)]
+   (if-let [patch (changed-files-with-patch (:repo rev) (:raw rev))]
      {:add-line (count (re-seq #"\n\+" patch))
       :delete-line (count (re-seq #"\n\-" patch))}
      {:add-line 0
@@ -170,17 +217,126 @@
       (.atZone (jt/zone-id))
       (.toLocalDate)))
 
+(defn truncate-time-to-day [date]
+  (-> date
+      .toInstant
+      (.atZone (jt/zone-id))
+      (.toLocalDateTime)
+      (jt/truncate-to :days)
+      (.atZone (jt/zone-id))
+      .toInstant
+      (java.util.Date/from)))
+
+(defn rev->date [rev]
+  (-> rev :time time->date ))
+
 (defn- time-slices
   "可以接受的参数 :m :w :d"
   [time-unit start-time end-time]
   )
 
+(defn commit-file-name [repo date]
+  (format "./tmp/%s/%s-commit.edn" repo (jt/format "YYYY-MM-dd" date) ))
+
+(defn commits-cached? [repo date]
+  (.exists (io/file (commit-file-name repo date))))
+
+(defn gen-commits-anew [repo repo-dir date]
+  (let [file-name (commit-file-name repo date)
+        file (io/file file-name)
+        _ (io/make-parents file)
+        data (->> repo-dir
+                  load-repo
+                  all-commits
+                  (map #(select-keys % [:email
+                                        :time
+                                        :branches
+                                        :merge
+                                        :author
+                                        :id
+                                        :message]))
+                  vec)]
+    (spit file-name data)
+    data))
+
+(defn retrive-commits-from-cache [repo date]
+  (let [file-name (commit-file-name repo date)]
+    (->> file-name
+         slurp
+         edn/read-string
+         )))
+
+(defn sync-commits [repo repo-dir date]
+  (let [file-name (commit-file-name repo date)
+        file (io/file file-name)
+        _ (io/make-parents file)]
+
+    (if (commits-cached? repo date)
+      (retrive-commits-from-cache repo date)
+      (gen-commits-anew repo repo-dir date))))
+
+(defn jt-local-date->util-date [date]
+  (-> date
+      (.atStartOfDay)
+      (.atZone (jt/zone-id))
+      (.toInstant)
+      (java.util.Date/from)))
+
+(defn in-peroid [start end now]
+  (let [s (jt-local-date->util-date start)
+        e (jt-local-date->util-date end)]
+    (and (neg? (compare s   now ))
+         (neg? (compare now e)))))
+
+
+
 
 (comment
-  (-> "../git-data"
-      load-repo
-      
-      )
+
+  (let [raw-data (sync-commits "定制平台"
+                               "../customplatform"
+                               (jt/local-date))
+        a-data (->> raw-data
+                    (filter (fn [e] (in-peroid (jt/minus (jt/local-date) (jt/days 30))
+                                              (jt/local-date)
+                                              (:time e))))
+                    (group-by :author)
+                    (reduce-kv (fn [m k v]
+                                 (assoc m k (->> v
+                                                 (group-by (fn [e] (truncate-time-to-day (:time e))))
+                                                 (reduce-kv (fn [m k v]
+                                                              (assoc m k (count v)))
+                                                            (sorted-map))
+                                                 (reduce-kv (fn [m k v]
+                                                              (-> m
+                                                                  (update-in  [:x] conj k)
+                                                                  (update-in  [:y] conj v)))
+                                                            {})
+                                                 )))
+                               {}))
+        data (->> raw-data
+                  (group-by (fn [e] (truncate-time-to-day (:time e))))
+                  (reduce-kv (fn [m k v]
+                               (assoc m k (count v)))
+                             {}))]
+    (c/view
+     (c/category-chart
+      a-data
+      {:width 640
+       :height 500
+       :render-style :line
+       :stacked true
+       :title "Expected Outages in 2017"
+       :date-pattern "MM-dd"
+       :y-axis {:tick-mark-spacing-hint 200}
+       :legend {:visible? true}})
+     ))
+  
+  (->> "../git-stats"
+       load-repo
+       all-commits
+       (group-by rev->date)
+       )
   )
 
 (defn src-dirs
@@ -238,12 +394,12 @@
   (processed? "customplatform" (jt/local-date))
   )
 
-(defn retrive-data-from-file [repo date]
+(defn retrive-loc-from-file [repo date]
   (->> (stats-file repo date)
        slurp
        edn/read-string))
 
-(defn generate-data-anew [repo date data]
+(defn generate-loc-anew [repo date data]
   (let [file (stats-file repo date)
         _ (io/make-parents file )]
     (-> (stats-file repo date)
@@ -255,8 +411,8 @@
 
 (defn sync-stats [repo-dir date]
   (if (processed? (repo-name repo-dir) date)
-    (retrive-data-from-file (repo-name repo-dir) date)
-    (generate-data-anew (repo-name repo-dir) date (authors-stats repo-dir) )))
+    (retrive-loc-from-file (repo-name repo-dir) date)
+    (generate-loc-anew (repo-name repo-dir) date (authors-stats repo-dir) )))
 
 (defn re-name [input]
   (reduce-kv (fn [m k v]
@@ -266,18 +422,50 @@
                         (+ v (or (get m {:name (get authors (:name k)) :file (:file k)} ) 0)  ))
                  (assoc m k v))) {} input))
 
+(defn gen-stats-chart [title repo-dir date]
+  (let [title (format "%s-%s" title (jt/format (jt/local-date)))
+        img-file (format "%s/%s.svg" "./tmp" title)]
+    (c/spit 
+     (c/category-chart
+      (category-chart-data (re-name (sync-stats repo-dir date)))
+      {:title title
+       :width 600
+       :height 400
+       :render-style :line
+       :theme :xchart
+       :y-axis {}
+       :x-axis {:order ["cljs" "clj" "sql" "css" "js"]}})
+     img-file)))
+
 (comment
+
+  (gen-stats-chart "定制平台" "../customplatform" (jt/local-date))
+
+  (gen-stats-chart "过敏管理" "../alk-wxapi" (jt/local-date))
+  
 
   (sync-stats "../alk-wxapi" (jt/local-date))
   (sync-stats "../customplatform" (jt/local-date))
   
-  (def r (java.util.Random. 42))
+  (c/view
+   (c/category-chart
+    (category-chart-data (re-name (sync-stats "../customplatform" (jt/local-date))))
+    {:title "定制平台"
+     :width 800
+     :height 1000
+     ;;:render-style :line
+     :stacked? true
+     :theme :xchart
+     :y-axis {:decimal-pattern "### %"}
+     :x-axis {}})
+   )
 
   (c/view
    (c/category-chart
     (category-chart-data (re-name (sync-stats "../alk-wxapi" (jt/local-date))))
     {:title "定制平台"
-     :theme :ggplot2
+     :render-style :line
+     :theme :xchart
      :x-axis {}})
    )
 

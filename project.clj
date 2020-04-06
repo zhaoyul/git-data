@@ -1,4 +1,5 @@
 (defproject git-stats "0.1.0-SNAPSHOT"
+  :jvm-opts ["-Dapple.awt.UIElement=false"]
 
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
